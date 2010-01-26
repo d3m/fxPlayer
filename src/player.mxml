@@ -1,0 +1,902 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:Application applicationComplete="init()" layout="absolute" xmlns:mx="http://www.adobe.com/2006/mxml" enabled="true">
+	<mx:Script><![CDATA[
+        import mx.events.*;
+        import caurina.transitions.*;
+        import flash.display.*;
+        import flash.events.*;
+        import flash.filters.*;
+        import flash.net.*;
+        import flash.system.*;
+        import flash.text.*;
+        import flash.ui.*;
+        import flash.utils.*;
+        import mx.binding.*;
+        import mx.containers.*;
+        import mx.controls.*;
+        import mx.controls.videoClasses.*;
+        import mx.core.*;
+        import mx.events.*;
+        import mx.styles.*;
+        import ua.net.dem.*;
+        import com.adobe.crypto.MD5;
+        
+        private var video:VideoPlayer;
+        private var videoStream:NetStream;
+        private var videoConnection:NetConnection;
+        
+        private var currentTime:Number = 0;
+        private var currentBytesTotal:Number = 0;
+        private var retries:Number = 0;
+        private var currentSize:Number = 0;
+        
+        private var idleTimer:Timer;
+        private var cursorPos:uint = 0;
+        private var so:SharedObject;
+        
+        private var videoWidth:uint;
+        private var videoHeight:uint;
+        private var videoX:uint;
+        private var videoY:uint;
+        
+        private var metadata:XML;
+        private var videoId:String;
+        private var lock:Boolean = false;
+        private var interval:Number = 0;
+        private var interval1:Number = 0;
+        private var updateLock:Boolean = false;
+        private var iasid:String = "";
+        
+		public function init() : void
+		{
+			var request:URLRequest;
+			var variables:URLVariables;
+			var ul:URLLoader;
+			
+			try
+            {
+                videoId = this.parameters.global;
+            }
+            catch (err:Error)
+            {
+                return;
+            }
+            
+            Security.loadPolicyFile("http://dem.net.ua/crossdomain.xml");
+            so = SharedObject.getLocal("DemPlayer");
+			
+			// TODO: domain check
+			 
+			
+			try
+            {
+            	request = new URLRequest(Config.APPHOST + "embed/video/" + ("?" + Math.random()));
+            	variables = new URLVariables(); 	
+            	variables.q = Base64.encode(videoId);
+            	if(so.data.r){
+            		variables.r = so.data.r;
+            	}
+            	request.data = variables;
+            	//request.requestHeaders.push(new URLRequestHeader("hash", iasid));
+            	request.method = URLRequestMethod.POST;
+            	ul = new URLLoader();
+            	ul.load(request);
+	           	ul.addEventListener(Event.COMPLETE, function (event:Event) : void
+    		        {
+    		        	try {
+							metadata = XML(Base64.decode(ul.data));  
+							errorBox.visible = true;
+							errorBox.text = metadata.name;  
+							
+							setup();				
+            
+                		} catch (e:TypeError) {
+                    		errorBox.visible = true;
+                    		errorBox.text = "Невозможно получить данные";
+                		}
+                		return;
+            		}
+            	);
+                
+
+             	
+            }
+            catch (err:Error)
+            {
+            	errorBox.visible = true;
+                errorBox.text = "Невозможно получить данные";
+            }
+			
+		}
+		
+		private function setup() : void
+		{	
+			video = new VideoPlayer(1,1);
+			video.smoothing = true;
+			video.bufferTime = 1;
+			
+			videoContainer.rawChildren.addChild(video);
+			playProgress.width = 0;
+            bufferProgress.width = 0;
+            playButton.source = playButtonSource;
+            fullscreenButton.source = fullscreenOffSource;
+            
+            
+            
+           	video.addEventListener(MetadataEvent.METADATA_RECEIVED, metadataReceivedHandler);
+            video.addEventListener(VideoEvent.PLAYHEAD_UPDATE, playheadUpdateHandler);
+            video.addEventListener(VideoEvent.STATE_CHANGE, videoStateChange);
+            video.addEventListener(ProgressEvent.PROGRESS, progressUpdateHandler);
+            
+            videoContainer.addEventListener(MouseEvent.CLICK, clickHandler);
+            videoContainer.addEventListener(MouseEvent.DOUBLE_CLICK, doubleClickHandler);
+            
+			playButton.addEventListener(MouseEvent.CLICK, playClickHandler);
+			playButton.addEventListener(MouseEvent.MOUSE_OVER, playMouseOverHandler);
+            playButton.addEventListener(MouseEvent.MOUSE_OUT, playMouseOutHandler);
+			
+			addEventListener(MouseEvent.MOUSE_MOVE, mouseMoveHandler);
+            addEventListener(MouseEvent.MOUSE_OUT, mouseOutHandler);
+            addEventListener(MouseEvent.MOUSE_OVER, mouseOverHandler);
+			
+			volumeBar.addEventListener(MouseEvent.CLICK, volumeBarClickHandler);
+			
+			seekBar.addEventListener(MouseEvent.CLICK, seekBarClickHandler);
+			seekBar.addEventListener(MouseEvent.MOUSE_OVER, seekBarOverHandler);
+			seekBar.addEventListener(MouseEvent.MOUSE_OUT, seekBarOutHandler);
+			seekBar.addEventListener(MouseEvent.MOUSE_MOVE, seekBarMoveHandler);
+			
+			fullscreenButton.addEventListener(MouseEvent.CLICK, fullscreenClickHandler);
+            fullscreenButton.addEventListener(MouseEvent.MOUSE_OVER, fullscreenMouseOverHandler);
+            fullscreenButton.addEventListener(MouseEvent.MOUSE_OUT, fullscreenMouseOutHandler);
+			
+			stage.addEventListener(FullScreenEvent.FULL_SCREEN, fullScreenHandler);
+            stage.addEventListener(Event.RESIZE, stageResizeHandler);
+			
+			//
+			var customMenu:* = new ContextMenu();
+			var customItem:* = new ContextMenuItem("DemPlayer", false, false);
+            customMenu.customItems.push(customItem);
+            customMenu.hideBuiltInItems();
+            this.contextMenu = customMenu;
+            
+            idleTimer = new Timer(1500, 1);
+            idleTimer.addEventListener(TimerEvent.TIMER, idleTimerHandler);
+            idleTimer.start();
+            
+            playheadTime.text = formatTime(metadata.duration);
+            
+            
+            if (so.data.volume != null && so.data.volume > 0.15)
+            {
+                if (so.data.volume > 1)
+                {
+                    so.data.volume = 1;
+                }
+                setVolume(so.data.volume);
+            }
+            else
+            {
+                setVolume(0.5);
+            }
+            
+            setNormalView();
+            setKeyDownHandler();
+            stage.addEventListener(MouseEvent.MOUSE_WHEEL, mouseWheelHandler);
+            trace("init");
+		}
+		
+		public function setNormalView() : void
+        {
+            
+            videoWidth = Config.VIDEO_WIDTH_43;
+            videoHeight = Config.VIDEO_HEIGHT_43;
+            videoX = Config.VIDEO_X_43;
+            videoY = Config.VIDEO_Y_43;
+            
+            videoContainer.x = 0;
+            videoContainer.y = 0;
+            videoContainer.width = videoWidth;
+            videoContainer.height = videoHeight;
+
+            controlsBar.x = (videoWidth - controlsBar.width) / 2;
+            controlsBar.y = videoHeight - controlsBar.height;
+            timeBox.x = 0;
+            timeBox.y = 0;
+            timeBox.visible = false;
+            layoutLoader(loaderImg.visible);
+            controlsBar.visible = true;
+            return;
+        }
+        
+        public function setFullScreenView() : void
+        {
+        	videoContainer.x = 0;
+            videoContainer.y = 0;
+            videoContainer.width = unscaledWidth;
+            videoContainer.height = unscaledHeight;
+			controlsBar.x = (unscaledWidth - controlsBar.width) / 2;
+            controlsBar.y = unscaledHeight - controlsBar.height;
+        }
+        
+		public function layoutLoader(param1:Boolean) : void
+        {
+            
+            loaderImg.x = (videoContainer.width - loaderImg.width) / 2;
+            loaderImg.y = (videoContainer.height - loaderImg.height) /2;
+            loaderImg.visible = param1;
+            return;
+        }
+		
+		public function playWrapper(param1:String, param2:uint, param3:String) : void
+		{
+			var hash:String = MD5.hash(metadata.token + "/" + metadata.url + metadata.timestamp);
+			video.play(metadata.baseUrl + "/" + hash + "/" + metadata.timestamp + "/" + metadata.url + "?start=" + param2,true,metadata.timestamp);
+			return;
+		}
+		
+		public function playClickHandler(event:Event) : void
+		{
+			
+			switch(video.state)
+            {
+                case VideoPlayer.PLAYING:
+                case VideoPlayer.BUFFERING:
+                {
+                    video.pause();
+                    if (playButton.source == pauseButtonHoverSource)
+                    {
+                        playButton.source = playButtonHoverSource;
+                    }
+                    else
+                    {
+                        playButton.source = playButtonSource;
+                    }
+                    break;
+                }
+                case VideoPlayer.STOPPED:
+                {
+                	playWrapper(null, 0, null);
+                	if (playButton.source == playButtonHoverSource)
+                    {
+                        playButton.source = pauseButtonHoverSource;
+                    }
+                    else
+                    {
+                        playButton.source = pauseButtonSource;
+                    }
+                	break;
+                }
+                case VideoPlayer.PAUSED:
+                {                    
+                    video.play();
+                    if (playButton.source == playButtonHoverSource)
+                    {
+                        playButton.source = pauseButtonHoverSource;
+                    }
+                    else
+                    {
+                        playButton.source = pauseButtonSource;
+                    }
+                    break;
+                }
+                default:
+                {
+                    playWrapper(null, 0, null);
+                    if (playButton.source == playButtonHoverSource)
+                    {
+                        playButton.source = pauseButtonHoverSource;
+                    }
+                    else
+                    {
+                        playButton.source = pauseButtonSource;
+                    }
+                    break;
+                    break;
+                }
+            }
+            return;		
+		}
+		
+		public function playMouseOverHandler(event:MouseEvent) : void
+        {
+            if (playButton.source == playButtonSource)
+            {
+                playButton.source = playButtonHoverSource;
+            }
+            else
+            {
+                playButton.source = pauseButtonHoverSource;
+            }
+            return;
+        }
+        
+        public function playMouseOutHandler(event:MouseEvent) : void
+        {
+            if (playButton.source == playButtonHoverSource)
+            {
+                playButton.source = playButtonSource;
+            }
+            else
+            {
+                playButton.source = pauseButtonSource;
+            }
+            return;
+        }        
+		
+		public function setVolume(param1:Number) : void
+        {
+            var volume:* = param1;
+            if (video.volume >= 1 && volume >= video.volume || video.volume <= 0 && volume <= video.volume)
+            {
+                return;
+            }
+            var i:uint;
+            var color:uint;
+            var height:uint;
+            var x:* = volumeBar.width * volume;
+            volumeBar.graphics.clear();
+            while (i < volumeBar.width)
+            {
+                
+                color = i <= x && x > 5 ? (231348) : (9015183);
+                volumeBar.graphics.beginFill(color);
+                if (x - i >= 5 || x - i < 0 || x <= 5)
+                {
+                    volumeBar.graphics.drawRect(i, 2, 3, 10);
+                }
+                else
+                {
+                    volumeBar.graphics.drawRect(i, 0, 3, 12);
+                }
+                i = i + 5;
+            }
+            if (x > 5)
+            {
+                volume = x / (volumeBar.width - 5 / 100);
+            }
+            video.volume = volume;
+            if (so.data.volume != volume)
+            {
+                so.data.volume = volume;
+                try
+                {
+                    so.flush();
+                }
+                catch (err:Error)
+                {
+                }
+            }
+            return;
+        }
+        
+		public function metadataReceivedHandler(event:MetadataEvent) : void
+        {
+            currentBytesTotal = video.bytesTotal;
+            resizeVideo();
+            return;
+        }
+        
+        public function volumeBarClickHandler(event:MouseEvent) : void
+        {
+            setVolume(event.localX / (volumeBar.width / 100) / 100);
+            return;
+        }
+        
+		public function playheadUpdateHandler(event:VideoEvent) : void
+        {
+            var url:String;
+            var request:URLRequest;
+            var variables:URLVariables;
+            var ul:URLLoader;
+            var event:* = event;
+            var v:Boolean;
+            if (video.totalTime > 0)
+            {
+                playheadTime.text = formatTime(metadata.duration - video.playheadTime);
+               
+                if (loaderImg.visible == true)
+                {
+                    loaderImg.visible = false;
+                }
+                if((video.playheadTime * (310 / metadata.duration)) <= (310 - currentTime + 2)) // +2 хуита
+                playProgress.width = (video.playheadTime * (310 / metadata.duration));
+                if(video.totalTime < 40){
+                	playProgress.x = seekBar.x;
+                } else {
+                	playProgress.x = seekBar.x + (metadata.duration - video.totalTime) / (metadata.duration / (310)) + currentTime;
+                }
+            }
+            return;
+        }
+        
+        public function formatTime(param1:Number) : String
+        {
+            var _loc_2:* = Math.floor(param1); // секунды
+            var _loc_3:* = Math.floor(_loc_2 / 60); // минуты
+            var _loc_4:* = _loc_2 - _loc_3 * 60; // остаток секунд
+            var _loc_5:* = 0;
+            if(_loc_3 > 60) {
+            	_loc_5 = Math.floor(_loc_3 / 60); // часы
+            	_loc_3 = _loc_3 - _loc_5 * 60; // остаток минут
+            }
+            return zeroPad(_loc_5, 2) + ":" + zeroPad(_loc_3, 2) + ":" + zeroPad(_loc_4, 2);
+        }
+        
+        public function zeroPad(param1:Number, param2:int) : String
+        {
+            var _loc_3:* = "" + param1;
+            while (_loc_3.length < param2)
+            {
+                
+                _loc_3 = "0" + _loc_3;
+            }
+            return _loc_3;
+        }
+        
+		public function videoStateChange(event:VideoEvent) : void
+        {
+            switch(event.state)
+            {
+                case VideoPlayer.PLAYING:
+                {
+                    layoutLoader(false);
+                    retries = 0;
+                    break;
+                }
+                case VideoPlayer.BUFFERING:
+                {
+                    layoutLoader(true);
+                    break;
+                }
+                case VideoPlayer.REWINDING:
+                {
+                    if (currentBytesTotal != video.bytesTotal)
+                    {
+                        playWrapper(null, Math.round(metadata.duration - video.totalTime + video.playheadTime), null);
+                    }
+                    break;
+                }
+                case VideoPlayer.STOPPED:
+                {
+                    if (playButton.source == pauseButtonHoverSource)
+                    {
+                        playButton.source = playButtonHoverSource;
+                    }
+                    else if (playButton.source == pauseButtonSource)
+                    {
+                        playButton.source = playButtonSource;
+                    }
+                    if(video.playheadTime < 40){
+                    	Alert.show('Please register!', 'TV', mx.controls.Alert.OK);
+                    }
+                    currentTime = 0;
+                    break;
+                }
+                case VideoPlayer.CONNECTION_ERROR:
+                {
+                    var _loc_3:* = retries + 1;
+                    retries = _loc_3;
+                    currentTime = 0;
+                    if (retries < 10)
+                    {
+                        playWrapper(null, video.playheadTime > 0 ? (Math.round(metadata.duration - video.totalTime + video.playheadTime)) : (0), null);
+                    }
+                    else
+                    {
+                        layoutLoader(false);
+                        if (playButton.source == pauseButtonHoverSource)
+                        {
+                            playButton.source = playButtonHoverSource;
+                        }
+                        else if (playButton.source == pauseButtonSource)
+                        {
+                            playButton.source = playButtonSource;
+                        }
+                        errorBox.width = unscaledWidth;
+                        errorBox.y = unscaledHeight / 2 - errorBox.height;
+                        errorBox.visible = true;
+                        retries = 0;
+                    }
+                    break;
+                }
+                default:
+                {
+                    break;
+                }
+            }
+            return;
+        }
+        
+        public function progressUpdateHandler(event:ProgressEvent) : void
+        {
+            if (video.totalTime > 0)
+            {
+            	
+            	if(video.totalTime < 40){
+            		bufferProgress.x = seekBar.x;
+            	} else {
+                	bufferProgress.x = seekBar.x + ((metadata.duration - video.totalTime) * (310 / metadata.duration)) + currentTime;
+             	}
+                bufferProgress.width = ((310 - currentTime) / event.bytesTotal) * event.bytesLoaded;
+            }
+            return;
+        }
+        
+		public function mouseMoveHandler(event:MouseEvent) : void
+        {
+            Mouse.show();
+            controlsBar.visible = true;
+            playheadTime.visible = true;
+            Tweener.addTween(controlsBar, {alpha:1, time:1});
+            return;
+        }
+        
+        public function mouseOutHandler(event:MouseEvent) : void
+        {
+            idleTimer.reset();
+            idleTimer.repeatCount = 1;
+            idleTimer.start();
+            return;
+        }
+        
+        public function mouseOverHandler(event:MouseEvent) : void
+        {
+            idleTimer.reset();
+            idleTimer.repeatCount = 0;
+            idleTimer.start();
+            return;
+        }
+        
+		public function idleTimerHandler(event:TimerEvent) : void
+        {
+            var event:* = event;
+            if (cursorPos != mouseX + mouseY && idleTimer.repeatCount != 1)
+            {
+                cursorPos = mouseX + mouseY;
+            }
+            else if (video.state != VideoPlayer.DISCONNECTED)
+            {
+                Mouse.hide();
+                Tweener.addTween(timeBox, {alpha:0, time:1});
+                Tweener.addTween(controlsBar, {onComplete:function () : void
+            {
+                controlsBar.visible = false; 
+                playheadTime.visible = false;               
+                return;
+            }
+            , alpha:0, time:3});
+            }
+            return;
+        }
+        
+		public function resizeVideo() : void
+        {
+            var _loc_7:Number = NaN;
+            var _loc_8:Number = NaN;
+            var _loc_1:Number = 0;
+            var _loc_2:Number = 0;
+            var _loc_3:* = videoContainer.width;
+            var _loc_4:* = videoContainer.height;
+            var _loc_5:* = video.videoWidth;
+            var _loc_6:* = video.videoHeight;
+            if (_loc_5 > 0 && _loc_6 > 0)
+            {
+                _loc_7 = _loc_3 / _loc_5;
+                _loc_8 = _loc_4 / _loc_6;
+                if (_loc_7 < _loc_8)
+                {
+                    _loc_4 = _loc_3 * _loc_6 / _loc_5;
+                    _loc_2 = (videoContainer.height - _loc_4) / 2;
+                }
+                else if (_loc_8 < _loc_7)
+                {
+                    _loc_3 = _loc_4 * _loc_5 / _loc_6;
+                    _loc_1 = (videoContainer.width - _loc_3) / 2;
+                }
+            }
+            video.x = _loc_1;
+            video.y = _loc_2;
+            video.setSize(_loc_3, _loc_4);
+            return;
+        }
+        
+		public function seekBarOverHandler(event:MouseEvent) : void
+        {
+            timeBox.alpha = 0;
+            timeBox.visible = true;
+            Tweener.addTween(timeBox, {alpha:1, time:1});
+            return;
+        }
+        
+		public function seekBarOutHandler(event:MouseEvent) : void
+        {
+            var event:* = event;
+            Tweener.addTween(timeBox, {onComplete:function () : void
+            {
+                timeBox.visible = false;
+                return;
+            }
+            , alpha:0, time:1});
+            return;
+        }
+        
+		public function seekBarMoveHandler(event:MouseEvent) : void
+        {
+            timePosition.text = formatTime(Math.round(event.localX * (metadata.duration / 310)));
+            timeBox.x = event.stageX - timeBox.width / 2;
+            timeBox.y = controlsBar.y + seekBar.y - timeBox.height - 3;
+            if (timeBox.alpha != 1)
+            {
+                Tweener.addTween(timeBox, {alpha:1, time:1});
+            }
+            return;
+        }
+        
+		public function seekBarClickHandler(event:MouseEvent) : void
+        {
+            if (event.localX > bufferProgress.x - seekBar.x && event.localX < bufferProgress.x - seekBar.x + bufferProgress.width)
+            {
+                video.seek(Math.round(event.localX * (metadata.duration / 310)) - (metadata.duration - video.totalTime));
+            }
+            else
+            {
+                playProgress.width = 0;
+                bufferProgress.width = 0;
+                currentTime = event.localX;
+                playWrapper(null, Math.round(event.localX * (metadata.duration / 310)), null);
+                playButton.source = pauseButtonSource;
+                bufferProgress.x = event.localX;
+                playProgress.x = event.localX;
+
+            }
+            return;
+        }
+        
+        public function clickHandler(event:MouseEvent) : void
+        {
+            lock = false;
+            clearInterval(interval);
+            interval = setInterval(deferredClickHandler, 300);
+            return;
+        }
+        
+        public function deferredClickHandler() : void
+        {
+            lock = true;
+            clearInterval(interval);
+            playClickHandler(new Event("click"));
+            return;
+        }
+		
+        public function doubleClickHandler(event:MouseEvent) : void
+        {
+            if (!lock)
+            {
+                clearInterval(interval);
+                fullscreenClickHandler(event);
+            }
+            return;
+        }
+        
+        public function fullscreenClickHandler(event:MouseEvent) : void
+        {
+            if (stage.displayState == StageDisplayState.NORMAL)
+            {
+                unsetKeyDownHandler();
+                stage.displayState = StageDisplayState.FULL_SCREEN;
+                
+                interval1 = setInterval(setKeyDownHandler, 1000);
+            }
+            else
+            {
+                stage.displayState = StageDisplayState.NORMAL;
+            }
+            return;
+        }
+        
+        public function unsetKeyDownHandler() : void
+        {
+            stage.removeEventListener(KeyboardEvent.KEY_DOWN, keyPressHandler);
+            return;
+        }
+        
+        public function setKeyDownHandler() : void
+        {
+            clearInterval(interval1);
+            stage.addEventListener(KeyboardEvent.KEY_DOWN, keyPressHandler);
+            return;
+        }
+        
+        public function keyPressHandler(event:KeyboardEvent) : void
+        {
+            var event:* = event;
+            stage.focus = this;
+            switch(event.keyCode)
+            {
+                case Keyboard.SPACE:
+                {
+                    playClickHandler(new Event("click"));
+                    break;
+                }
+                case 70:
+                {
+                    fullscreenClickHandler(new MouseEvent("click"));
+                    break;
+                }
+                case 76:
+                {
+                    break;
+                }
+                case 77:
+                {
+                    if (video.volume == 0)
+                    {
+                        setVolume(0.5);
+                    }
+                    else
+                    {
+                        setVolume(0);
+                    }
+                    break;
+                }
+                case Keyboard.DOWN:
+                {
+                    setVolume(video.volume - 0.15);
+                    break;
+                }
+                case Keyboard.UP:
+                {
+                    setVolume(video.volume + 0.15);
+                    break;
+                }
+                case Keyboard.LEFT:
+                {
+                    try
+                    {
+                        if (video.totalTime > 0 && video.playheadTime < 10)
+                        {
+                            video.seek(0);
+                        }
+                        else if (video.totalTime > 0)
+                        {
+                            video.seek(video.playheadTime - 10);
+                        }
+                    }
+                    catch (err:Error)
+                    {
+                    }
+                    break;
+                }
+                case Keyboard.RIGHT:
+                {
+                    try
+                    {
+                        if (video.totalTime > 0 && video.state != VideoPlayer.BUFFERING)
+                        {
+                            video.seek(video.playheadTime + 10);
+                        }
+                    }
+                    catch (err:Error)
+                    {
+                    }
+                    break;
+                }
+                default:
+                {
+                    break;
+                }
+            }
+            return;
+        }
+        
+		public function fullscreenMouseOverHandler(event:MouseEvent) : void
+        {
+            var event:* = event;
+            if (stage.displayState == StageDisplayState.NORMAL)
+            {
+                fullscreenButton.source = fullscreenOffHoverSource;
+            }
+            else
+            {
+                fullscreenButton.source = fullscreenOnHoverSource;
+            }
+            
+            return;
+        }
+        
+		public function fullscreenMouseOutHandler(event:MouseEvent) : void
+        {
+            var event:* = event;
+            if (stage.displayState == StageDisplayState.NORMAL)
+            {
+                fullscreenButton.source = fullscreenOffSource;
+            }
+            else
+            {
+                fullscreenButton.source = fullscreenOnSource;
+            }
+            
+            return;
+        }
+        
+		public function fullScreenHandler(event:FullScreenEvent) : void
+        {
+            fullscreenMouseOutHandler(new MouseEvent("out"));
+            if (event.fullScreen)
+            {
+                setFullScreenView();
+            }
+            else
+            {
+                setNormalView();
+            }
+            resizeVideo();
+            return;
+        }
+        
+        public function stageResizeHandler(event:Event) : void
+        {
+
+                videoContainer.width = 520;
+                videoContainer.height = 370;
+                setNormalView();
+                resizeVideo();
+
+            return;
+        }
+        
+		public function mouseWheelHandler(event:MouseEvent) : void
+        {
+            if (stage.displayState == StageDisplayState.NORMAL)
+            {
+                return;
+            }
+            if (event.delta > 0)
+            {
+                setVolume(video.volume + 0.05);
+            }
+            else if (event.delta < 0)
+            {
+                setVolume(video.volume - 0.05);
+            }
+            return;
+        }
+		
+	]]></mx:Script>
+	<mx:Canvas id="canvas" x="0" y="0"/>
+	<mx:Canvas backgroundColor="#00000000" doubleClickEnabled="true" height="370" id="videoContainer" width="520" x="0" y="0">
+		
+		
+	</mx:Canvas>
+		
+	<mx:Canvas backgroundAlpha="0" backgroundColor="#00ffffff" height="37" horizontalScrollPolicy="off" id="controlsBar" verticalScrollPolicy="off" visible="false" width="520" x="0" y="0">
+		<mx:Image height="30" id="_Player_Image1" source="{controlsBarSource}" width="460" x="59" y="2"/>
+		<mx:Image buttonMode="true" height="30" id="playButton" mouseChildren="false" useHandCursor="true" width="49" x="5" y="0"/>
+		<mx:Label color="#00898f8f" fontSize="10" height="18" visible="false" id="playheadTime" styleName="text" text="00:00:00" width="58" x="382" y="7" fontFamily="Trebuchet MS" fontAntiAliasType="advanced" fontGridFitType="subpixel" />
+		<mx:Canvas backgroundColor="#00222222" height="9" id="bufferProgress" width="0" x="68" y="11"/>
+		<mx:Canvas backgroundColor="#000387b4" height="9" id="playProgress" width="0" x="68" y="11"/>
+		<mx:Canvas buttonMode="true" height="8" id="seekBar" mouseChildren="false" useHandCursor="true" width="310" x="68" y="12"/>
+		<mx:Canvas buttonMode="true" height="12" id="volumeBar" mouseChildren="false" useHandCursor="true" width="33" x="444" y="9"/>
+		<mx:Image buttonMode="true" height="16" id="fullscreenButton" mouseChildren="false" useHandCursor="true" width="21" x="490" y="7" />	
+	</mx:Canvas>
+	<mx:Canvas height="18" id="timeBox" visible="false" width="50" x="-50" y="-50">
+		<mx:Image height="18" id="_Player_Image7" source="{timeBoxSource}" width="50" x="0" y="0"/>
+		<mx:Label color="#00000000" height="18" id="timePosition" styleName="text" textAlign="center" width="50" x="0" y="0" fontSize="10" fontFamily="Trebuchet MS" verticalCenter="true"/>
+	</mx:Canvas>
+	<mx:Label color="#00ffffff" fontSize="14" height="38" id="errorBox" text="К сожалению, в данный момент это видео недоступно." textAlign="center" visible="false" width="500" x="0" y="0" fontAntiAliasType="advanced" fontGridFitType="subpixel" />
+	<mx:SWFLoader id="loaderImg" source="Player_loader_dataClass.swf" autoLoad="true" visible="false" x="0" y="0" width="110" height="100"/>
+	
+	<mx:Style>
+        .text
+        {
+            fontThickness : 50;
+            fontGridFitType : none;
+            fontWeight : normal;
+            embedFonts : true;
+            fontAntiAliasType : advanced;
+            fontSharpness : 6;
+            fontFamily : "Trebuchet MS";
+        }
+    </mx:Style>
+</mx:Application>
