@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<mx:Application applicationComplete="init()" layout="absolute" xmlns:mx="http://www.adobe.com/2006/mxml" enabled="true">
+<mx:Application applicationComplete="init()" layout="absolute" xmlns:mx="http://www.adobe.com/2006/mxml" enabled="true" xmlns:dem="ua.net.dem.*">
 	<mx:Script><![CDATA[
         import mx.events.*;
         import caurina.transitions.*;
@@ -62,7 +62,7 @@
                 return;
             }
             
-            Security.loadPolicyFile("http://dem.net.ua/crossdomain.xml");
+            Security.loadPolicyFile("http://dem.net.ua/crossdomain.xml" + ("?" + Math.random()));
             so = SharedObject.getLocal("DemPlayer");
 			
 			// TODO: domain check
@@ -153,6 +153,8 @@
 			stage.addEventListener(FullScreenEvent.FULL_SCREEN, fullScreenHandler);
             stage.addEventListener(Event.RESIZE, stageResizeHandler);
 			
+			screenImg.addEventListener(Event.COMPLETE, onScreenImgComplete);
+			
 			//
 			var customMenu:* = new ContextMenu();
 			var customItem:* = new ContextMenuItem("DemPlayer", false, false);
@@ -180,6 +182,14 @@
                 setVolume(0.5);
             }
             
+            try
+            {
+            	screenImg.trustContent = true;
+            	screenImg.source = metadata.screen;
+            }
+            catch (err:Error)
+            {
+            }
             setNormalView();
             setKeyDownHandler();
             stage.addEventListener(MouseEvent.MOUSE_WHEEL, mouseWheelHandler);
@@ -198,6 +208,10 @@
             videoContainer.y = 0;
             videoContainer.width = videoWidth;
             videoContainer.height = videoHeight;
+            
+            screenBox.width = Config.VIDEO_WIDTH_43;
+            screenBox.height = Config.VIDEO_HEIGHT_43;
+            resizeScreenImg();
 
             controlsBar.x = (videoWidth - controlsBar.width) / 2;
             controlsBar.y = videoHeight - controlsBar.height;
@@ -206,6 +220,36 @@
             timeBox.visible = false;
             layoutLoader(loaderImg.visible);
             controlsBar.visible = true;
+            return;
+        }
+        
+        public function resizeScreenImg() : void
+        {
+        	var _loc_7:Number = NaN;
+            var _loc_8:Number = NaN;
+            var _loc_1:Number = 0;
+            var _loc_2:Number = 0;
+            var _loc_3:* = screenBox.width;
+            var _loc_4:* = screenBox.height;
+            var _loc_5:* = screenImg.contentWidth;
+            var _loc_6:* = screenImg.contentHeight;
+            if (_loc_5 > 0 && _loc_6 > 0)
+            {
+                _loc_7 = _loc_3 / _loc_5;
+                _loc_8 = _loc_4 / _loc_6;
+                if (_loc_7 < _loc_8)
+                {
+                    _loc_4 = _loc_3 * _loc_6 / _loc_5;
+                    _loc_2 = (screenBox.height - _loc_4) / 2;
+                }
+                else if (_loc_8 < _loc_7)
+                {
+                    _loc_3 = _loc_4 * _loc_5 / _loc_6;
+                    _loc_1 = (screenBox.width - _loc_3) / 2;
+                }
+            }
+            screenImg.width = _loc_3;
+            screenImg.height = _loc_4;
             return;
         }
         
@@ -237,7 +281,7 @@
 		
 		public function playClickHandler(event:Event) : void
 		{
-			
+			screenImg.visible = false;
 			switch(video.state)
             {
                 case VideoPlayer.PLAYING:
@@ -644,6 +688,7 @@
                 playProgress.width = 0;
                 bufferProgress.width = 0;
                 currentTime = event.localX;
+                screenImg.visible = false;
                 playWrapper(null, Math.round(event.localX * (metadata.duration / 310)), null);
                 playButton.source = pauseButtonSource;
                 bufferProgress.x = event.localX;
@@ -863,22 +908,36 @@
             return;
         }
 		
+		public function onScreenImgComplete(event:Event) : void
+        {
+            resizeScreenImg();
+            return;
+        }// end function
+		
 	]]></mx:Script>
 	<mx:Canvas id="canvas" x="0" y="0"/>
-	<mx:Canvas backgroundColor="#00000000" doubleClickEnabled="true" height="370" id="videoContainer" width="520" x="0" y="0">
-		
+	<mx:Canvas backgroundColor="#00000000" doubleClickEnabled="true" height="300" id="videoContainer" width="500" x="0" y="0">
+	
+		<mx:Box horizontalAlign="center" id="screenBox" verticalAlign="middle" width="500" height="300">
+			<dem:SmoothImage autoLoad="true" id="screenImg" width="500" height="300"/>
+		</mx:Box>	
 		
 	</mx:Canvas>
+	
+	<mx:Canvas backgroundImage="{paymentformbg}" width="400" height="226">
 		
-	<mx:Canvas backgroundAlpha="0" backgroundColor="#00ffffff" height="37" horizontalScrollPolicy="off" id="controlsBar" verticalScrollPolicy="off" visible="false" width="520" x="0" y="0">
-		<mx:Image height="30" id="_Player_Image1" source="{controlsBarSource}" width="460" x="59" y="2"/>
+	</mx:Canvas>
+	
+		
+	<mx:Canvas backgroundAlpha="0" backgroundColor="#00ffffff" height="37" horizontalScrollPolicy="off" id="controlsBar" verticalScrollPolicy="off" visible="true" width="500" x="0" y="0">
+		<mx:Image height="30" id="_Player_Image1" source="{controlsBarSource}" width="436" x="59" y="2"/>
 		<mx:Image buttonMode="true" height="30" id="playButton" mouseChildren="false" useHandCursor="true" width="49" x="5" y="0"/>
-		<mx:Label color="#00898f8f" fontSize="10" height="18" visible="false" id="playheadTime" styleName="text" text="00:00:00" width="58" x="382" y="7" fontFamily="Trebuchet MS" fontAntiAliasType="advanced" fontGridFitType="subpixel" />
+		<mx:Label color="#00898f8f" fontSize="10" height="18" visible="false" id="playheadTime" styleName="text" text="00:00:00" width="58" x="379" y="7" fontFamily="Trebuchet MS" fontAntiAliasType="advanced" fontGridFitType="subpixel" />
 		<mx:Canvas backgroundColor="#00222222" height="9" id="bufferProgress" width="0" x="68" y="11"/>
 		<mx:Canvas backgroundColor="#000387b4" height="9" id="playProgress" width="0" x="68" y="11"/>
 		<mx:Canvas buttonMode="true" height="8" id="seekBar" mouseChildren="false" useHandCursor="true" width="310" x="68" y="12"/>
-		<mx:Canvas buttonMode="true" height="12" id="volumeBar" mouseChildren="false" useHandCursor="true" width="33" x="444" y="9"/>
-		<mx:Image buttonMode="true" height="16" id="fullscreenButton" mouseChildren="false" useHandCursor="true" width="21" x="490" y="7" />	
+		<mx:Canvas buttonMode="true" height="12" id="volumeBar" mouseChildren="false" useHandCursor="true" width="33" x="424" y="9"/>
+		<mx:Image buttonMode="true" height="16" id="fullscreenButton" mouseChildren="false" useHandCursor="true" width="21" x="465" y="7" />	
 	</mx:Canvas>
 	<mx:Canvas height="18" id="timeBox" visible="false" width="50" x="-50" y="-50">
 		<mx:Image height="18" id="_Player_Image7" source="{timeBoxSource}" width="50" x="0" y="0"/>
@@ -892,7 +951,7 @@
         {
             fontThickness : 50;
             fontGridFitType : none;
-            fontWeight : normal;
+            fontWeight : normal; 
             embedFonts : true;
             fontAntiAliasType : advanced;
             fontSharpness : 6;
