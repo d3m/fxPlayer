@@ -212,6 +212,9 @@
             screenBox.width = Config.VIDEO_WIDTH_43;
             screenBox.height = Config.VIDEO_HEIGHT_43;
             resizeScreenImg();
+            
+            paymentform.x = (Config.VIDEO_WIDTH_43 - Config.PAYMENTFORM_WIDTH)/2;
+            paymentform.y = (Config.VIDEO_HEIGHT_43 - Config.PAYMENTFORM_HEIGHT - 30)/2;
 
             controlsBar.x = (videoWidth - controlsBar.width) / 2;
             controlsBar.y = videoHeight - controlsBar.height;
@@ -443,12 +446,12 @@
                 {
                     loaderImg.visible = false;
                 }
-                if((video.playheadTime * (310 / metadata.duration)) <= (310 - currentTime + 2)) // +2 хуита
-                playProgress.width = (video.playheadTime * (310 / metadata.duration));
+                if((video.playheadTime * (300 / metadata.duration)) <= (300 - currentTime + 2)) // +2 хуита
+                playProgress.width = (video.playheadTime * (300 / metadata.duration));
                 if(video.totalTime < 40){
                 	playProgress.x = seekBar.x;
                 } else {
-                	playProgress.x = seekBar.x + (metadata.duration - video.totalTime) / (metadata.duration / (310)) + currentTime;
+                	playProgress.x = seekBar.x + (metadata.duration - video.totalTime) / (metadata.duration / (300)) + currentTime;
                 }
             }
             return;
@@ -556,13 +559,13 @@
         {
             if (video.totalTime > 0)
             {
-            	
+            	errorBox.visible = true;
             	if(video.totalTime < 40){
             		bufferProgress.x = seekBar.x;
             	} else {
-                	bufferProgress.x = seekBar.x + ((metadata.duration - video.totalTime) * (310 / metadata.duration)) + currentTime;
+                	bufferProgress.x = seekBar.x + ((metadata.duration - video.totalTime) * (300 / metadata.duration)) + currentTime;
              	}
-                bufferProgress.width = ((310 - currentTime) / event.bytesTotal) * event.bytesLoaded;
+                bufferProgress.width = ((300 - currentTime) / event.bytesTotal) * event.bytesLoaded;
             }
             return;
         }
@@ -667,7 +670,7 @@
         
 		public function seekBarMoveHandler(event:MouseEvent) : void
         {
-            timePosition.text = formatTime(Math.round(event.localX * (metadata.duration / 310)));
+            timePosition.text = formatTime(Math.round(event.localX * (metadata.duration / 300)));
             timeBox.x = event.stageX - timeBox.width / 2;
             timeBox.y = controlsBar.y + seekBar.y - timeBox.height - 3;
             if (timeBox.alpha != 1)
@@ -681,7 +684,7 @@
         {
             if (event.localX > bufferProgress.x - seekBar.x && event.localX < bufferProgress.x - seekBar.x + bufferProgress.width)
             {
-                video.seek(Math.round(event.localX * (metadata.duration / 310)) - (metadata.duration - video.totalTime));
+                video.seek(Math.round(event.localX * (metadata.duration / 300)) - (metadata.duration - video.totalTime));
             }
             else
             {
@@ -689,7 +692,7 @@
                 bufferProgress.width = 0;
                 currentTime = event.localX;
                 screenImg.visible = false;
-                playWrapper(null, Math.round(event.localX * (metadata.duration / 310)), null);
+                playWrapper(null, Math.round(event.localX * (metadata.duration / 300)), null);
                 playButton.source = pauseButtonSource;
                 bufferProgress.x = event.localX;
                 playProgress.x = event.localX;
@@ -883,8 +886,8 @@
         public function stageResizeHandler(event:Event) : void
         {
 
-                videoContainer.width = 520;
-                videoContainer.height = 370;
+                videoContainer.width = 500;
+                videoContainer.height = 300;
                 setNormalView();
                 resizeVideo();
 
@@ -924,18 +927,30 @@
 		
 	</mx:Canvas>
 	
-	<mx:Canvas backgroundImage="{paymentformbg}" width="400" height="226">
+	
+	<mx:Canvas id="paymentform" backgroundImage="{paymentformbg}" width="422" height="246" visible="true" alpha="0.9">
+		<mx:Text y="33" selectable="false" textAlign="center" width="422" color="#00ffffff" fontSize="14" text="Для просмотра и скачивания фильмов"  fontAntiAliasType="advanced" fontGridFitType="subpixel" fontFamily="Tahoma"/>
+		<mx:Text y="50" selectable="false" textAlign="center" width="422" color="#00ffffff" fontSize="14" text="с максимальной скоростью и в высоком качестве"  fontAntiAliasType="advanced" fontGridFitType="subpixel" fontFamily="Tahoma"/>
+		<mx:Text y="67" selectable="false" textAlign="center" width="422" color="#00ffffff" fontSize="14" text="Вам нужен код доступа"  fontAntiAliasType="advanced" fontGridFitType="subpixel" fontFamily="Tahoma"/>
+		<mx:Text y="93" x="120" selectable="false" textAlign="right" width="60" color="#00ffffff" fontSize="14" text="Страна"  fontAntiAliasType="advanced" fontGridFitType="subpixel" fontFamily="Tahoma"/>
 		
+		<mx:ComboBox alpha="1" x="190" y="93" color="#000387b4" themeColor="#4E4E4E" borderThickness="0" dropdownBorderColor="#000000" editable="false" borderColor="#000000" fillColors="#000000" fontAntiAliasType="advanced" fontGridFitType="subpixel" fontSize="14" rollOverColor="#000000" selectionColor="#747474" textRollOverColor="#676767">
+			<mx:ArrayCollection>
+         		<mx:String>AK</mx:String>
+         		<mx:String>AL</mx:String>
+         		<mx:String>AR</mx:String>
+      		</mx:ArrayCollection>
+		</mx:ComboBox>
 	</mx:Canvas>
 	
 		
-	<mx:Canvas backgroundAlpha="0" backgroundColor="#00ffffff" height="37" horizontalScrollPolicy="off" id="controlsBar" verticalScrollPolicy="off" visible="true" width="500" x="0" y="0">
+	<mx:Canvas backgroundAlpha="0" backgroundColor="#00ffffff" height="37" horizontalScrollPolicy="off" id="controlsBar" verticalScrollPolicy="off" visible="false" width="500" x="0" y="0">
 		<mx:Image height="30" id="_Player_Image1" source="{controlsBarSource}" width="436" x="59" y="2"/>
 		<mx:Image buttonMode="true" height="30" id="playButton" mouseChildren="false" useHandCursor="true" width="49" x="5" y="0"/>
 		<mx:Label color="#00898f8f" fontSize="10" height="18" visible="false" id="playheadTime" styleName="text" text="00:00:00" width="58" x="379" y="7" fontFamily="Trebuchet MS" fontAntiAliasType="advanced" fontGridFitType="subpixel" />
-		<mx:Canvas backgroundColor="#00222222" height="9" id="bufferProgress" width="0" x="68" y="11"/>
-		<mx:Canvas backgroundColor="#000387b4" height="9" id="playProgress" width="0" x="68" y="11"/>
-		<mx:Canvas buttonMode="true" height="8" id="seekBar" mouseChildren="false" useHandCursor="true" width="310" x="68" y="12"/>
+		<mx:Canvas backgroundColor="#00222222" height="10" id="bufferProgress" width="0" x="69" y="12"/>
+		<mx:Canvas backgroundColor="#000387b4" height="10" id="playProgress" width="0" x="69" y="12"/>
+		<mx:Canvas buttonMode="true" height="10" id="seekBar" mouseChildren="false" useHandCursor="true" width="300" x="69" y="12"/>
 		<mx:Canvas buttonMode="true" height="12" id="volumeBar" mouseChildren="false" useHandCursor="true" width="33" x="424" y="9"/>
 		<mx:Image buttonMode="true" height="16" id="fullscreenButton" mouseChildren="false" useHandCursor="true" width="21" x="465" y="7" />	
 	</mx:Canvas>
